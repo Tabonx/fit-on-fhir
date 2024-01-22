@@ -32,6 +32,7 @@ namespace Microsoft.Health.FitOnFhir.Authorization
             CancellationToken cancellationToken)
         {
             _logger.LogInformation("incoming request from: {0}", req?.Host + req?.Path);
+            _logger.LogInformation("Authorization Function called", req?.Host + req?.Path);
             return await _routingService.RouteTo(req, context, cancellationToken);
         }
     }

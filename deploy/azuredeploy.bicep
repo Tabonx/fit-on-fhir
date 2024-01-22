@@ -14,7 +14,7 @@ param google_client_id string
 param google_client_secret string
 
 @description('The repository where the fit-on-fhir source code resides.')
-param repository_url string = 'https://github.com/Microsoft/fit-on-fhir'
+param repository_url string = 'https://github.com/Tabonx/fit-on-fhir'
 
 @description('The source code branch to be deployed.')
 param repository_branch string = 'main'
@@ -324,7 +324,7 @@ resource authorize_basename 'Microsoft.Web/sites@2022-03-01' = {
       cors: {
         allowedOrigins: authorize_allowed_origins
       }
-      netFrameworkVersion: 'v6.0'
+      netFrameworkVersion: 'v7.0'
       use32BitWorkerProcess: false
     }
   }
@@ -335,7 +335,7 @@ resource authorize_basename_appsettings 'Microsoft.Web/sites/config@2022-03-01' 
   name: 'appsettings'
   properties: {
     FUNCTIONS_EXTENSION_VERSION: '~4'
-    FUNCTIONS_WORKER_RUNTIME: 'dotnet'
+    FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
     PROJECT: 'src/Authorization/FitOnFhir.Authorization/Microsoft.Health.FitOnFhir.Authorization.csproj'
     AzureWebJobsStorage__accountName: sa_basename.name
     APPINSIGHTS_INSTRUMENTATIONKEY: ai_basename.properties.InstrumentationKey
@@ -349,7 +349,7 @@ resource authorize_basename_appsettings 'Microsoft.Web/sites/config@2022-03-01' 
     AzureConfiguration__TableServiceUri: sa_basename.properties.primaryEndpoints.table
     AzureConfiguration__QueueServiceUri: sa_basename.properties.primaryEndpoints.queue
     AzureConfiguration__VaultUri: kv_basename.properties.vaultUri
-	  AuthenticationConfiguration__IsAnonymousLoginEnabled : (authentication_anonymous_login_enabled == true) ? 'true' : 'false'
+    AuthenticationConfiguration__IsAnonymousLoginEnabled: (authentication_anonymous_login_enabled == true) ? 'true' : 'false'
     AuthenticationConfiguration__IdentityProviders: authentication_identity_providers
     AuthenticationConfiguration__Audience: authentication_audience
     AuthenticationConfiguration__RedirectUrls: authentication_redirect_urls
@@ -364,7 +364,7 @@ resource authorize_basename_web 'Microsoft.Web/sites/sourcecontrols@2022-03-01' 
   properties: {
     repoUrl: repository_url
     branch: repository_branch
-    isManualIntegration: true
+    isManualIntegration: false
   }
   dependsOn: [
     authorize_basename_appsettings
@@ -390,7 +390,7 @@ resource import_timer_basename 'Microsoft.Web/sites@2022-03-01' = {
     containerSize: 1536
     dailyMemoryTimeQuota: 0
     siteConfig: {
-      netFrameworkVersion: 'v6.0'
+      netFrameworkVersion: 'v7.0'
       use32BitWorkerProcess: false
     }
   }
@@ -401,7 +401,7 @@ resource import_timer_basename_appsettings 'Microsoft.Web/sites/config@2022-03-0
   name: 'appsettings'
   properties: {
     FUNCTIONS_EXTENSION_VERSION: '~4'
-    FUNCTIONS_WORKER_RUNTIME: 'dotnet'
+    FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
     PROJECT: 'src/ImportTimerTrigger/FitOnFhir.ImportTimerTrigger/Microsoft.Health.FitOnFhir.ImportTimerTrigger.csproj'
     AzureWebJobsStorage__accountName: sa_basename.name
     APPINSIGHTS_INSTRUMENTATIONKEY: ai_basename.properties.InstrumentationKey
@@ -446,7 +446,7 @@ resource import_data_basename 'Microsoft.Web/sites@2022-03-01' = {
     containerSize: 1536
     dailyMemoryTimeQuota: 0
     siteConfig: {
-      netFrameworkVersion: 'v6.0'
+      netFrameworkVersion: 'v7.0'
       use32BitWorkerProcess: false
     }
   }
@@ -457,7 +457,7 @@ resource import_data_basename_appsettings 'Microsoft.Web/sites/config@2022-03-01
   name: 'appsettings'
   properties: {
     FUNCTIONS_EXTENSION_VERSION: '~4'
-    FUNCTIONS_WORKER_RUNTIME: 'dotnet'
+    FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
     PROJECT: 'src/Import/FitOnFhir.Import/Microsoft.Health.FitOnFhir.Import.csproj'
     AzureWebJobsStorage__accountName: sa_basename.name
     AzureWebJobsStorage__queueServiceUri: sa_basename.properties.primaryEndpoints.queue
@@ -469,7 +469,7 @@ resource import_data_basename_appsettings 'Microsoft.Web/sites/config@2022-03-01
     AzureConfiguration__TableServiceUri: sa_basename.properties.primaryEndpoints.table
     AzureConfiguration__QueueServiceUri: sa_basename.properties.primaryEndpoints.queue
     AzureConfiguration__EventHubFullyQualifiedNamespace: split(replace(en_basename.properties.serviceBusEndpoint, '//', ''), ':')[1]
-    AzureConfiguration__EventHubName:en_basename_ingest.name
+    AzureConfiguration__EventHubName: en_basename_ingest.name
     AzureConfiguration__VaultUri: kv_basename.properties.vaultUri
     GoogleFitAuthorizationConfiguration__ClientId: google_client_id
     GoogleFitAuthorizationConfiguration__ClientSecret: '@Microsoft.KeyVault(SecretUri=${kv_google_client_secret.properties.secretUriWithVersion})'
@@ -540,7 +540,7 @@ resource hw_basename 'Microsoft.HealthcareApis/workspaces@2022-06-01' = {
   properties: {}
 }
 
-resource hw_basename_fs_basename 'Microsoft.HealthcareApis/workspaces/fhirservices@2022-06-01' = {
+resource hw_basename_fs_basename 'Microsoft.HealthcareApis/workspaces/fhirservices@2023-11-01' = {
   name: 'fs-${basename}'
   parent: hw_basename
   location: location

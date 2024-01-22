@@ -3,13 +3,24 @@
     "contentVersion": "1.0.0.0",
     "parameters": {
         "basename": {
-            "value": ""
+            "value": "google-fit-test"
         },
         "google_client_id": {
-            "value": ""
+            "value": "101043697960-4nndo3cha3bbbdthk8p6prcs2gmutg34.apps.googleusercontent.com"
         },
         "google_client_secret": {
             "value": ""
+        },
+        "authentication_anonymous_login_enabled": {
+            "value": true
+        },
+        "authorize_allowed_origins": {
+            "value": [
+                "*"
+            ]
+        },
+        "authentication_redirect_urls": {
+            "value": "http://localhost:3000"
         }
     }
 }
