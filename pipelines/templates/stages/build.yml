@@ -1,0 +1,92 @@
+parameters:
+  environment: ''
+
+stages:
+  - stage: Build
+    displayName: Building
+    dependsOn: []
+    variables:
+      - template: ../variables/${{ parameters.environment }}.yml
+    jobs:
+      - job: BuildARM
+        displayName: ARM & Verify
+        steps:
+          - bash: az bicep build -f deploy/azuredeploy.bicep --outdir /tmp
+            displayName: Compile Bicep
+          - bash: |
+              diff <(tail -n +9 /tmp/azuredeploy.json) <(tail -n +9 deploy/azuredeploy.json)
+              if [ $? -ne  0 ]; then
+                echo ''
+                echo '🚨 Compiled ARM json does not match'
+                echo '⚠️ This error can be caused by a new release of Bicep'
+                echo '⚠️ To fix this issue:'
+                echo '⚠️ Update Bicep (az bicep upgrade)'
+                echo '⚠️ Rebuild the arm template (from the deploy folder run az bicep build -f azuredeploy.bicep)'
+                echo '⚠️ Commit the changes'
+                exit 1
+              fi
+            displayName: Verify built bicep matches ARM in repo
+
+      - job: BuildGoogleFitOnFhir
+        displayName: Project
+        steps:
+
+          - task: NuGetAuthenticate@1
+
+          - task: UseDotNet@2
+            displayName: 'Use .NET Core sdk 7.0.x'
+            inputs:
+              version: 7.0.x
+          
+          - task: DotNetCoreCLI@2
+            displayName: Test
+            inputs:
+              command: test
+              arguments: >
+                /p:CollectCoverage=true
+                /p:CoverletOutputformat=cobertura
+                /p:CoverletOutput=$(System.DefaultWorkingDirectory)\Cobertura.xml
+              publishTestResults: false
+              projects: '**/**/*.Tests.csproj'
+              nugetConfigPath: nuget.config
+
+          - bash: |
+              sudo apt-get -y install libxml2-utils
+              dotnet tool install dotnet-reportgenerator-globaltool \
+                --tool-path tools
+            displayName: Install Coverage Dependencies
+
+          - bash: >
+              ./tools/reportgenerator
+              $REPORTDR
+              $TARGETDIR
+              $REPORTTYPE
+            displayName: Combine Coverage
+            env:
+              TARGETDIR: -targetdir:.
+              REPORTTYPE: -reporttypes:Cobertura
+              REPORTDR: -reports:$(System.DefaultWorkingDirectory)/Cobertura.xml
+
+          - task: PublishCodeCoverageResults@1
+            displayName: Publish Code Coverage
+            inputs:
+              codeCoverageTool: Cobertura
+              summaryFileLocation: |
+                $(System.DefaultWorkingDirectory)/Cobertura.xml
+
+          - task: DotNetCoreCLI@2
+            displayName: Build
+            inputs:
+              command: publish
+              publishWebProjects: false
+              projects: |
+                **/*.csproj
+                !**/*Tests.csproj
+              zipAfterPublish: true
+              arguments: >
+                --configuration Release
+                --output $(Build.ArtifactStagingDirectory)
+
+          - publish: $(Build.ArtifactStagingDirectory)
+            artifact: dotnet-release
+            displayName: Publish staged artifacts

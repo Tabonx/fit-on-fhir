@@ -1,0 +1,29 @@
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  environment: e2e
+
+stages:
+  - template: ./templates/stages/build.yml
+    parameters:
+      environment: ${{ variables.environment }}
+
+  - template: ./templates/stages/deploy.yml
+    parameters:
+      environment: ${{ variables.environment }}
+
+  - template: ./templates/stages/durable-deploy.yml
+    parameters:
+      environment: ${{ variables.environment }}
+
+  - template: ./templates/stages/e2e-tests.yml
+    parameters:
+      environment: ${{ variables.environment }}
+
+  - template: ./templates/stages/clean.yml
+    parameters:
+      environment: ${{ variables.environment }}
+      cleanAfter: E2ETests

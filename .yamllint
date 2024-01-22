@@ -1,0 +1,13 @@
+extends: default
+
+ignore: |
+  node_modules/
+  sandbox/
+
+rules:
+  document-start: disable
+  quoted-strings:
+    required: only-when-needed
+  line-length:
+    max: 120
+  new-lines: disable

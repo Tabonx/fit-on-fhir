@@ -1,0 +1,157 @@
+﻿// -------------------------------------------------------------------------------------------------
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License (MIT). See LICENSE in the repo root for license information.
+// -------------------------------------------------------------------------------------------------
+
+using EnsureThat;
+using Microsoft.Extensions.Logging;
+using Microsoft.Health.Extensions.Fhir.Service;
+using Microsoft.Health.FitOnFhir.Common.Models;
+using Microsoft.Health.FitOnFhir.Common.Repositories;
+using Microsoft.Health.FitOnFhir.Common.Resolvers;
+using Identifier = Hl7.Fhir.Model.Identifier;
+using Patient = Hl7.Fhir.Model.Patient;
+
+namespace Microsoft.Health.FitOnFhir.Common.Services
+{
+    public abstract class UsersServiceBase
+    {
+        private readonly ResourceManagementService _resourceManagementService;
+        private readonly IUsersTableRepository _usersTableRepository;
+
+        private readonly ILogger<UsersServiceBase> _logger;
+
+        protected UsersServiceBase(ResourceManagementService resourceManagementService, IUsersTableRepository usersTableRepository, ILogger<UsersServiceBase> logger)
+        {
+            _resourceManagementService = EnsureArg.IsNotNull(resourceManagementService, nameof(resourceManagementService));
+            _usersTableRepository = EnsureArg.IsNotNull(usersTableRepository, nameof(usersTableRepository));
+            _logger = EnsureArg.IsNotNull(logger, nameof(logger));
+        }
+
+        public abstract string PlatformName { get; }
+
+        public async Task EnsurePatientAndUser(string platformName, string platformIdentifier, string platformSystem, AuthState state, CancellationToken cancellationToken)
+        {
+            EnsureArg.IsNotNullOrWhiteSpace(platformName, nameof(platformName));
+            EnsureArg.IsNotNullOrWhiteSpace(platformIdentifier, nameof(platformIdentifier));
+            EnsureArg.IsNotNullOrWhiteSpace(platformSystem, nameof(platformSystem));
+            string externalPatientId = EnsureArg.IsNotNullOrWhiteSpace(state?.ExternalIdentifier, nameof(state.ExternalIdentifier));
+            string externalSystem = EnsureArg.IsNotNullOrWhiteSpace(state?.ExternalSystem, nameof(state.ExternalSystem));
+
+            // 1. Check if a Patient exists that contains the EXTERNAL Patient Identifier.
+            Patient patient = await _resourceManagementService.GetResourceByIdentityAsync<Patient>(externalPatientId, externalSystem);
+            _logger.LogInformation($"Checking if a Patient exists that contains the {externalPatientId} Patient Identifier.");
+            Identifier identifierToAdd;
+
+            if (patient == null)
+            {
+                _logger.LogInformation($"No patient with {externalPatientId} create or get Patient with platformIdentifier {platformIdentifier}");
+
+                // 2. There is no Patient that exists with the EXTERNAL Patient Identifier.
+                // Create or get the Patient Resource using the PLATFORM user identifier.
+                patient = await _resourceManagementService.EnsureResourceByIdentityAsync<Patient>(
+                    platformIdentifier,
+                    platformSystem,
+                    (p, id) => p.Identifier = new List<Identifier> { id });
+
+                identifierToAdd = new Identifier(externalSystem, externalPatientId);
+            }
+            else
+            {
+                _logger.LogInformation($"Patient with {externalPatientId} exists");
+
+                // A Patient exists with the EXTERNAL Patient identifier.
+                // Set the identifierToAdd to ensure the PLATFORM Patient identifier is included
+                // in the Patient identifiers.
+                identifierToAdd = new Identifier(platformSystem, platformIdentifier);
+            }
+
+            if (!patient.Identifier.Any(i =>
+                {
+                    return i.System.Equals(identifierToAdd.System, StringComparison.OrdinalIgnoreCase) &&
+                    i.Value.Equals(identifierToAdd.Value, StringComparison.OrdinalIgnoreCase);
+                }))
+            {
+                // 3. A required identifier is not included in the Patient, so the identifierToAdd must be added.
+                // This ensures that both identifiers are included in the Patient Resource.
+                patient.Identifier.Add(identifierToAdd);
+                _logger.LogInformation($"A required identifier is not included in the Patient, so the identifierToAdd must be added. Patient: {patient.ToString()} ifMatchVersion: {patient.Meta.VersionId}");
+                await _resourceManagementService.FhirService.UpdateResourceAsync(patient, ifMatchVersion: $"W/\"{patient.Meta.VersionId}\"", cancellationToken: cancellationToken);
+            }
+
+            // Check to see if the user exists in the repository.
+            _logger.LogInformation($"Check to see if the user exists in the repository.");
+            User user = await _usersTableRepository.GetById(patient.Id, cancellationToken);
+
+            if (user == null)
+            {
+                _logger.LogInformation($"User {patient.Id} does not exist in userTableRepository");
+
+                // If a user does not exist, create a new user and add it to the repository.
+                user = new User(Guid.Parse(patient.Id));
+                user.AddPlatformUserInfo(new PlatformUserInfo(platformName, platformIdentifier, DataImportState.ReadyToImport));
+                await _usersTableRepository.Insert(user, cancellationToken);
+            }
+            else
+            {
+                _logger.LogInformation($"User {patient.Id} does exist in userTableRepository");
+
+                if (!user.UpdateImportState(platformName, DataImportState.ReadyToImport))
+                {
+                    _logger.LogInformation($"UpdateImportState");
+
+                    user.AddPlatformUserInfo(new PlatformUserInfo(platformName, platformIdentifier, DataImportState.ReadyToImport));
+                }
+
+                _logger.LogInformation($"Update User");
+                await UpdateUser(user, cancellationToken);
+            }
+
+            await QueueFitnessImport(user, cancellationToken);
+        }
+
+        public async Task RevokeAccess(AuthState state, CancellationToken cancellationToken)
+        {
+            EnsureArg.IsNotNull(state, nameof(state));
+
+            var user = await RetrieveUserForPatient(state.ExternalIdentifier, state.ExternalSystem, cancellationToken);
+
+            if (user != null)
+            {
+                var platformInfo = user.GetPlatformUserInfo()
+                    .FirstOrDefault(pui => pui.PlatformName == PlatformName);
+
+                if (platformInfo != default)
+                {
+                    await RevokeAccessRequest(platformInfo, cancellationToken);
+
+                    await UpdateUser(user, cancellationToken);
+                }
+            }
+        }
+
+        public async Task<User> RetrieveUserForPatient(string externalPatientId, string externalSystem, CancellationToken cancellationToken)
+        {
+            Patient patient = await _resourceManagementService.GetResourceByIdentityAsync<Patient>(externalPatientId, externalSystem);
+
+            if (patient != null)
+            {
+                return await _usersTableRepository.GetById(patient.Id, cancellationToken);
+            }
+
+            return null;
+        }
+
+        public async Task UpdateUser(User user, CancellationToken cancellationToken)
+        {
+            await _usersTableRepository.Update(
+                user,
+                UserConflictResolvers.ResolveConflictAuthorization,
+                cancellationToken);
+        }
+
+        public abstract Task QueueFitnessImport(User user, CancellationToken cancellationToken);
+
+        public abstract Task RevokeAccessRequest(PlatformUserInfo platformUserInfo, CancellationToken cancellationToken);
+    }
+}

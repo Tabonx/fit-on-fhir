@@ -1,0 +1,36 @@
+parameters:
+  - name: environment
+    default: ''
+
+stages:
+  - stage: EphemeralDeploy
+    displayName: Deploying Ephemeral
+    dependsOn: [Build]
+    variables:
+      - template: ../variables/${{ parameters.environment }}.yml
+    jobs:
+      - job: DeployResources
+        displayName: Resources
+        steps:
+          - download: current
+            artifact: dotnet-release
+            displayName: Download dotnet-release artifact
+          - task: AzureCLI@2
+            displayName: Deploy $(basename)
+            inputs:
+              azureSubscription: ${{ variables.azure_service_connection_name }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az group create --location $(location) --name $(basename)
+          - template: ../steps/deploy-parse-arm.yml
+            parameters:
+              displayName: Deploy resources for $(basename)
+              azureSubscription: ${{ variables.azure_service_connection_name }}
+              resourceGroupName: $(basename)
+              location: $(location)
+              overrideParameters: >
+                -basename "$(basename)"
+                -google_client_id "$(gfit-google-client-id)"
+                -google_client_secret "$(gfit-google-client-secret)"
+              armFile: ./deploy/azuredeploy.json

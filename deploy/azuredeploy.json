@@ -1,0 +1,2770 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.20.4.51522",
+      "templateHash": "2152635353540272877"
+    }
+  },
+  "parameters": {
+    "basename": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 16,
+      "metadata": {
+        "description": "Base name that is used to name provisioned resources. Should be alphanumeric, at least 3 characters and less than 16 characters."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "The location where the resources(s) are deployed."
+      }
+    },
+    "google_client_id": {
+      "type": "string",
+      "metadata": {
+        "description": "The Google OAuth2 web application client id."
+      }
+    },
+    "google_client_secret": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The Google OAuth2 web application client secret."
+      }
+    },
+    "repository_url": {
+      "type": "string",
+      "defaultValue": "https://github.com/Microsoft/fit-on-fhir",
+      "metadata": {
+        "description": "The repository where the fit-on-fhir source code resides."
+      }
+    },
+    "repository_branch": {
+      "type": "string",
+      "defaultValue": "main",
+      "metadata": {
+        "description": "The source code branch to be deployed."
+      }
+    },
+    "google_dataset_request_limit": {
+      "type": "string",
+      "defaultValue": "1000",
+      "metadata": {
+        "description": "The maximum Google Fit data points returned per dataset request."
+      }
+    },
+    "google_max_concurrency": {
+      "type": "string",
+      "defaultValue": "10",
+      "metadata": {
+        "description": "The maximum concurrent tasks allowed per Google Fit dataset request."
+      }
+    },
+    "google_max_requests_per_minute": {
+      "type": "string",
+      "defaultValue": "300",
+      "metadata": {
+        "description": "The maximum number of requests that can be made to the Google APIs in a one minute period."
+      }
+    },
+    "google_historical_import_time_span": {
+      "type": "string",
+      "defaultValue": "30.00:00:00",
+      "metadata": {
+        "description": "The period of time from now into the past, that the first Google Fit data import should cover.  30 days prior is the default.  Format is days.hours:minutes:seconds"
+      }
+    },
+    "authentication_anonymous_login_enabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enables anonymous logins (true) or requires authentication (false)."
+      }
+    },
+    "authentication_identity_providers": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "A list of identity provider URLs used when authentication is required."
+      }
+    },
+    "authentication_audience": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "The URL that any access tokens are granted for."
+      }
+    },
+    "google_fit_scopes": {
+      "type": "string",
+      "defaultValue": "https://www.googleapis.com/auth/userinfo.profile,https://www.googleapis.com/auth/fitness.activity.read,https://www.googleapis.com/auth/fitness.sleep.read,https://www.googleapis.com/auth/fitness.reproductive_health.read,https://www.googleapis.com/auth/fitness.oxygen_saturation.read,https://www.googleapis.com/auth/fitness.nutrition.read,https://www.googleapis.com/auth/fitness.location.read,https://www.googleapis.com/auth/fitness.body_temperature.read,https://www.googleapis.com/auth/fitness.body.read,https://www.googleapis.com/auth/fitness.blood_pressure.read,https://www.googleapis.com/auth/fitness.blood_glucose.read,https://www.googleapis.com/auth/fitness.heart_rate.read",
+      "metadata": {
+        "description": "The Google Fit data authorization scopes allowed for users of this service (see https://developers.google.com/fit/datatypes#authorization_scopes for more info)"
+      }
+    },
+    "authentication_redirect_urls": {
+      "type": "string",
+      "metadata": {
+        "description": "A comma delimited list of approved redirect URLs that can be navigated to when authentication completes successfully."
+      }
+    },
+    "authorize_allowed_origins": {
+      "type": "array",
+      "metadata": {
+        "description": "An array of allowed origins that can make requests to the authorize API (CORS)."
+      }
+    }
+  },
+  "variables": {
+    "fhir_data_writer": "[resourceId('Microsoft.Authorization/roleDefinitions', '3f88fce4-5892-4214-ae73-ba5294559913')]",
+    "event_hubs_data_receiver": "[resourceId('Microsoft.Authorization/roleDefinitions', 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde')]",
+    "event_hubs_data_sender": "[resourceId('Microsoft.Authorization/roleDefinitions', '2b629674-e913-4c01-ae53-ef4638d8f975')]",
+    "storage_table_data_contributor": "[resourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')]",
+    "storage_blob_data_owner": "[resourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')]",
+    "storage_queue_data_contributor": "[resourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')]",
+    "storage_queue_data_message_sender": "[resourceId('Microsoft.Authorization/roleDefinitions', 'c6a89b2d-59bc-44d0-9896-0f6e12d7b80a')]",
+    "storage_queue_data_message_processor": "[resourceId('Microsoft.Authorization/roleDefinitions', '8a0f0c08-91a1-4084-bc3d-661d67233fed')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2022-07-01",
+      "name": "[format('kv-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "accessPolicies": [
+          {
+            "tenantId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.tenantId]",
+            "objectId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]",
+            "permissions": {
+              "secrets": [
+                "get",
+                "set",
+                "delete",
+                "list"
+              ]
+            }
+          },
+          {
+            "tenantId": "[reference(resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), '2022-03-01', 'full').identity.tenantId]",
+            "objectId": "[reference(resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]",
+            "permissions": {
+              "secrets": [
+                "get"
+              ]
+            }
+          },
+          {
+            "tenantId": "[reference(resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), '2022-03-01', 'full').identity.tenantId]",
+            "objectId": "[reference(resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]",
+            "permissions": {
+              "secrets": [
+                "get",
+                "set",
+                "delete",
+                "list"
+              ]
+            }
+          }
+        ],
+        "tenantId": "[subscription().tenantId]",
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 30
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}/{1}', format('kv-{0}', parameters('basename')), 'storage-account-connection-string')]",
+      "properties": {
+        "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', replace(format('sa-{0}', parameters('basename')), '-', ''), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').keys[0].value)]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}/{1}', format('kv-{0}', parameters('basename')), 'google-client-secret')]",
+      "properties": {
+        "value": "[parameters('google_client_secret')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2022-05-01",
+      "name": "[replace(format('sa-{0}', parameters('basename')), '-', '')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_GRS"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": true,
+        "allowSharedKeyAccess": true,
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "virtualNetworkRules": [],
+          "ipRules": [],
+          "defaultAction": "Allow"
+        },
+        "supportsHttpsTrafficOnly": true,
+        "encryption": {
+          "services": {
+            "blob": {
+              "keyType": "Account",
+              "enabled": true
+            },
+            "file": {
+              "keyType": "Account",
+              "enabled": true
+            }
+          },
+          "keySource": "Microsoft.Storage"
+        },
+        "accessTier": "Hot"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]",
+      "properties": {
+        "changeFeed": {
+          "enabled": false
+        },
+        "restorePolicy": {
+          "enabled": false
+        },
+        "containerDeleteRetentionPolicy": {
+          "enabled": true,
+          "days": 7
+        },
+        "cors": {
+          "corsRules": []
+        },
+        "deleteRetentionPolicy": {
+          "enabled": true,
+          "days": 7
+        },
+        "isVersioningEnabled": false,
+        "lastAccessTimeTrackingPolicy": {
+          "blobType": [
+            "blockBlob"
+          ],
+          "enable": true,
+          "name": "AccessTimeTracking",
+          "trackingGranularityInDays": 1
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]",
+      "properties": {
+        "policy": {
+          "rules": [
+            {
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "delete": {
+                      "daysAfterModificationGreaterThan": 1
+                    },
+                    "enableAutoTierToHotFromCool": false
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "authdata/"
+                  ]
+                }
+              },
+              "enabled": true,
+              "name": "blob management policy",
+              "type": "Lifecycle"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}/{2}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default', 'authdata')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]",
+      "properties": {},
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}/{2}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default', 'import-data')]",
+      "properties": {
+        "metadata": {}
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/queueServices', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+      "apiVersion": "2022-05-01",
+      "name": "[format('{0}/{1}/{2}', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default', 'users')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/tableServices', replace(format('sa-{0}', parameters('basename')), '-', ''), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2021-06-01",
+      "name": "[format('la-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[format('ai-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('la-{0}', parameters('basename')))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('la-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2022-03-01",
+      "name": "[format('app-plan-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic",
+        "size": "Y1",
+        "family": "Y",
+        "capacity": 0
+      },
+      "kind": "functionapp",
+      "properties": {
+        "perSiteScaling": false,
+        "maximumElasticWorkerCount": 1,
+        "isSpot": false,
+        "reserved": false,
+        "isXenon": false,
+        "hyperV": false,
+        "targetWorkerCount": 0,
+        "targetWorkerSizeId": 0
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2022-03-01",
+      "name": "[format('authorize-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "enabled": true,
+        "httpsOnly": true,
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('app-plan-{0}', parameters('basename')))]",
+        "reserved": false,
+        "scmSiteAlsoStopped": false,
+        "clientAffinityEnabled": true,
+        "clientCertEnabled": false,
+        "hostNamesDisabled": false,
+        "containerSize": 1536,
+        "dailyMemoryTimeQuota": 0,
+        "siteConfig": {
+          "cors": {
+            "allowedOrigins": "[parameters('authorize_allowed_origins')]"
+          },
+          "netFrameworkVersion": "v6.0",
+          "use32BitWorkerProcess": false
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('app-plan-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2022-03-01",
+      "name": "[format('{0}/{1}', format('authorize-{0}', parameters('basename')), 'appsettings')]",
+      "properties": {
+        "FUNCTIONS_EXTENSION_VERSION": "~4",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+        "PROJECT": "src/Authorization/FitOnFhir.Authorization/Microsoft.Health.FitOnFhir.Authorization.csproj",
+        "AzureWebJobsStorage__accountName": "[replace(format('sa-{0}', parameters('basename')), '-', '')]",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename'))), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename'))), '2020-02-02').ConnectionString]",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'storage-account-connection-string'), '2022-07-01').secretUriWithVersion)]",
+        "WEBSITE_CONTENTSHARE": "[format('{0}-{1}', format('authorize-{0}', parameters('basename')), take(uniqueString(format('authorize-{0}', parameters('basename'))), 4))]",
+        "GoogleFitAuthorizationConfiguration__ClientId": "[parameters('google_client_id')]",
+        "GoogleFitAuthorizationConfiguration__ClientSecret": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'google-client-secret'), '2022-07-01').secretUriWithVersion)]",
+        "GoogleFitAuthorizationConfiguration__Scopes": "[parameters('google_fit_scopes')]",
+        "AzureConfiguration__BlobServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.blob]",
+        "AzureConfiguration__TableServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.table]",
+        "AzureConfiguration__QueueServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.queue]",
+        "AzureConfiguration__VaultUri": "[reference(resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('basename'))), '2022-07-01').vaultUri]",
+        "AuthenticationConfiguration__IsAnonymousLoginEnabled": "[if(equals(parameters('authentication_anonymous_login_enabled'), true()), 'true', 'false')]",
+        "AuthenticationConfiguration__IdentityProviders": "[parameters('authentication_identity_providers')]",
+        "AuthenticationConfiguration__Audience": "[parameters('authentication_audience')]",
+        "AuthenticationConfiguration__RedirectUrls": "[parameters('authentication_redirect_urls')]",
+        "FhirService__Url": "[reference(resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename'))), '2022-06-01').authenticationConfiguration.audience]",
+        "FhirClient__UseManagedIdentity": "true"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'google-client-secret')]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'storage-account-connection-string')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/sourcecontrols",
+      "apiVersion": "2022-03-01",
+      "name": "[format('{0}/{1}', format('authorize-{0}', parameters('basename')), 'web')]",
+      "properties": {
+        "repoUrl": "[parameters('repository_url')]",
+        "branch": "[parameters('repository_branch')]",
+        "isManualIntegration": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites/config', format('authorize-{0}', parameters('basename')), 'appsettings')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2022-03-01",
+      "name": "[format('import-timer-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "enabled": true,
+        "httpsOnly": true,
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('app-plan-{0}', parameters('basename')))]",
+        "reserved": false,
+        "scmSiteAlsoStopped": false,
+        "clientAffinityEnabled": true,
+        "clientCertEnabled": false,
+        "hostNamesDisabled": false,
+        "containerSize": 1536,
+        "dailyMemoryTimeQuota": 0,
+        "siteConfig": {
+          "netFrameworkVersion": "v6.0",
+          "use32BitWorkerProcess": false
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('app-plan-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2022-03-01",
+      "name": "[format('{0}/{1}', format('import-timer-{0}', parameters('basename')), 'appsettings')]",
+      "properties": {
+        "FUNCTIONS_EXTENSION_VERSION": "~4",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+        "PROJECT": "src/ImportTimerTrigger/FitOnFhir.ImportTimerTrigger/Microsoft.Health.FitOnFhir.ImportTimerTrigger.csproj",
+        "AzureWebJobsStorage__accountName": "[replace(format('sa-{0}', parameters('basename')), '-', '')]",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename'))), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename'))), '2020-02-02').ConnectionString]",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'storage-account-connection-string'), '2022-07-01').secretUriWithVersion)]",
+        "WEBSITE_CONTENTSHARE": "[format('{0}-{1}', format('import-timer-{0}', parameters('basename')), take(uniqueString(format('import-timer-{0}', parameters('basename'))), 4))]",
+        "AzureConfiguration__TableServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.table]",
+        "AzureConfiguration__QueueServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.queue]",
+        "SCHEDULE": "0 0 * * * *"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'storage-account-connection-string')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/sourcecontrols",
+      "apiVersion": "2022-03-01",
+      "name": "[format('{0}/{1}', format('import-timer-{0}', parameters('basename')), 'web')]",
+      "properties": {
+        "repoUrl": "[parameters('repository_url')]",
+        "branch": "[parameters('repository_branch')]",
+        "isManualIntegration": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites/config', format('import-timer-{0}', parameters('basename')), 'appsettings')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2022-03-01",
+      "name": "[format('import-data-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "enabled": true,
+        "httpsOnly": true,
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('app-plan-{0}', parameters('basename')))]",
+        "reserved": false,
+        "scmSiteAlsoStopped": false,
+        "clientAffinityEnabled": true,
+        "clientCertEnabled": false,
+        "hostNamesDisabled": false,
+        "containerSize": 1536,
+        "dailyMemoryTimeQuota": 0,
+        "siteConfig": {
+          "netFrameworkVersion": "v6.0",
+          "use32BitWorkerProcess": false
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('app-plan-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2022-03-01",
+      "name": "[format('{0}/{1}', format('import-data-{0}', parameters('basename')), 'appsettings')]",
+      "properties": {
+        "FUNCTIONS_EXTENSION_VERSION": "~4",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+        "PROJECT": "src/Import/FitOnFhir.Import/Microsoft.Health.FitOnFhir.Import.csproj",
+        "AzureWebJobsStorage__accountName": "[replace(format('sa-{0}', parameters('basename')), '-', '')]",
+        "AzureWebJobsStorage__queueServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.queue]",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename'))), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename'))), '2020-02-02').ConnectionString]",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'storage-account-connection-string'), '2022-07-01').secretUriWithVersion)]",
+        "WEBSITE_CONTENTSHARE": "[format('{0}-{1}', format('import-data-{0}', parameters('basename')), take(uniqueString(format('import-data-{0}', parameters('basename'))), 4))]",
+        "AzureConfiguration__BlobServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.blob]",
+        "AzureConfiguration__TableServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.table]",
+        "AzureConfiguration__QueueServiceUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')), '2022-05-01').primaryEndpoints.queue]",
+        "AzureConfiguration__EventHubFullyQualifiedNamespace": "[split(replace(reference(resourceId('Microsoft.EventHub/namespaces', format('en-{0}', parameters('basename'))), '2021-11-01').serviceBusEndpoint, '//', ''), ':')[1]]",
+        "AzureConfiguration__EventHubName": "ingest",
+        "AzureConfiguration__VaultUri": "[reference(resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('basename'))), '2022-07-01').vaultUri]",
+        "GoogleFitAuthorizationConfiguration__ClientId": "[parameters('google_client_id')]",
+        "GoogleFitAuthorizationConfiguration__ClientSecret": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'google-client-secret'), '2022-07-01').secretUriWithVersion)]",
+        "GoogleFitAuthorizationConfiguration__Scopes": "[parameters('google_fit_scopes')]",
+        "GoogleFitDataImporterConfiguration__DatasetRequestLimit": "[parameters('google_dataset_request_limit')]",
+        "GoogleFitDataImporterConfiguration__MaxConcurrency": "[parameters('google_max_concurrency')]",
+        "GoogleFitDataImporterConfiguration__MaxRequestsPerMinute": "[parameters('google_max_requests_per_minute')]",
+        "GoogleFitDataImporterConfiguration__HistoricalImportTimeSpan": "[parameters('google_historical_import_time_span')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.EventHub/namespaces', format('en-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest')]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'google-client-secret')]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', format('kv-{0}', parameters('basename')), 'storage-account-connection-string')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/sourcecontrols",
+      "apiVersion": "2022-03-01",
+      "name": "[format('{0}/{1}', format('import-data-{0}', parameters('basename')), 'web')]",
+      "properties": {
+        "repoUrl": "[parameters('repository_url')]",
+        "branch": "[parameters('repository_branch')]",
+        "isManualIntegration": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites/config', format('import-data-{0}', parameters('basename')), 'appsettings')]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2021-11-01",
+      "name": "[format('en-{0}', parameters('basename'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard",
+        "tier": "Standard",
+        "capacity": 2
+      },
+      "properties": {
+        "zoneRedundant": true,
+        "isAutoInflateEnabled": true,
+        "maximumThroughputUnits": 8,
+        "kafkaEnabled": false
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}', format('en-{0}', parameters('basename')), 'ingest')]",
+      "properties": {
+        "messageRetentionInDays": 1,
+        "partitionCount": 4
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', format('en-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs/consumergroups",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}/{2}', format('en-{0}', parameters('basename')), 'ingest', '$Default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest')]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs/authorizationRules",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/{1}/{2}', format('en-{0}', parameters('basename')), 'ingest', 'FunctionSender')]",
+      "properties": {
+        "rights": [
+          "Send"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest')]"
+      ]
+    },
+    {
+      "type": "Microsoft.HealthcareApis/workspaces",
+      "apiVersion": "2022-06-01",
+      "name": "[replace(format('hw-{0}', parameters('basename')), '-', '')]",
+      "location": "[parameters('location')]",
+      "properties": {}
+    },
+    {
+      "type": "Microsoft.HealthcareApis/workspaces/fhirservices",
+      "apiVersion": "2022-06-01",
+      "name": "[format('{0}/{1}', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+      "location": "[parameters('location')]",
+      "kind": "fhir-R4",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "authenticationConfiguration": {
+          "authority": "[format('{0}{1}', environment().authentication.loginEndpoint, subscription().tenantId)]",
+          "audience": "[format('https://{0}-fs-{1}.fhir.azurehealthcareapis.com', replace(format('hw-{0}', parameters('basename')), '-', ''), parameters('basename'))]",
+          "smartProxyEnabled": false
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces', replace(format('hw-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.HealthcareApis/workspaces/iotconnectors",
+      "apiVersion": "2022-06-01",
+      "name": "[format('{0}/{1}', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "ingestionEndpointConfiguration": {
+          "eventHubName": "ingest",
+          "consumerGroup": "$Default",
+          "fullyQualifiedEventHubNamespace": "[format('en-{0}.servicebus.windows.net', parameters('basename'))]"
+        },
+        "deviceMapping": {
+          "content": {
+            "templateType": "CollectionContent",
+            "template": [
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.blood_glucose' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merged/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "blood_glucose_level",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "temporal_relation_to_meal",
+                      "valueExpression": {
+                        "value": "matchedToken.value[1].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_GENERAL'},{\"v\":@,\"n\":`2`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_FASTING'},{\"v\":@,\"n\":`3`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_BEFORE_MEAL'},{\"v\":@,\"n\":`4`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_AFTER_MEAL'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "meal_type",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'MEAL_TYPE_UNKNOWN'},{\"v\":@,\"n\":`2`,\"s\":'MEAL_TYPE_BREAKFAST'},{\"v\":@,\"n\":`3`,\"s\":'MEAL_TYPE_LUNCH'},{\"v\":@,\"n\":`4`,\"s\":'MEAL_TYPE_DINNER'},{\"v\":@,\"n\":`5`,\"s\":'MEAL_TYPE_SNACK'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "temporal_relation_to_sleep",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_FULLY_AWAKE'},{\"v\":@,\"n\":`2`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_BEFORE_SLEEP'},{\"v\":@,\"n\":`3`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_ON_WAKING'},{\"v\":@,\"n\":`4`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_DURING_SLEEP'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "blood_glucose_specimen_source",
+                      "valueExpression": {
+                        "value": "matchedToken.value[4].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_INTERSTITIAL_FLUID'},{\"v\":@,\"n\":`2`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_CAPILLARY_BLOOD'},{\"v\":@,\"n\":`3`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_PLASMA'},{\"v\":@,\"n\":`4`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_SERUM'},{\"v\":@,\"n\":`5`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_TEARS'},{\"v\":@,\"n\":`6`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_WHOLE_BLOOD'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.blood_glucose:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.blood_pressure' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merged/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "blood_pressure_systolic",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "blood_pressure_diastolic",
+                      "valueExpression": "matchedToken.value[1].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "body_position",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BODY_POSITION_STANDING'},{\"v\":@,\"n\":`2`,\"s\":'BODY_POSITION_SITTING'},{\"v\":@,\"n\":`3`,\"s\":'BODY_POSITION_LYING_DOWN'},{\"v\":@,\"n\":`4`,\"s\":'BODY_POSITION_SEMI_RECUMBENT'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "blood_pressure_measurement_location",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_LEFT_WRIST'},{\"v\":@,\"n\":`2`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_RIGHT_WRIST'},{\"v\":@,\"n\":`3`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_LEFT_UPPER_ARM'},{\"v\":@,\"n\":`4`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_RIGHT_UPPER_ARM'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.blood_pressure:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.body.fat.percentage' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merged/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "percentage",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.body.fat.percentage:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.body.fat.percentage' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.fitkit/ && $.Body.dataSourceId =~ /apple/ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /local_data/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "percentage",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.body.fat.percentage:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.body.temperature' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merged/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "body_temperature",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "body_temperature_measurement_location",
+                      "valueExpression": {
+                        "value": "matchedToken.value[1].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_AXILLARY'},{\"v\":@,\"n\":`2`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_FINGER'},{\"v\":@,\"n\":`3`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_FOREHEAD'},{\"v\":@,\"n\":`4`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_ORAL'},{\"v\":@,\"n\":`5`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_RECTAL'},{\"v\":@,\"n\":`6`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_TEMPORAL_ARTERY'},{\"v\":@,\"n\":`7`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_TOE'},{\"v\":@,\"n\":`8`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_TYMPANIC'},{\"v\":@,\"n\":`9`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_WRIST'},{\"v\":@,\"n\":`10`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_VAGINAL'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.body.temperature:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_minutes' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merge_heart_minutes/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "intensity",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_minutes:com.google.android.gms:merge_heart_minutes"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_minutes' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.ios.fit/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /top_level/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "intensity",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_minutes:com.google.ios.fit:appleinc.:iphone:top_level"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_minutes' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.ios.fit/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /watch/ && $.Body.dataSourceId =~ /top_level/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "intensity",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_minutes:com.google.ios.fit:appleinc.:watch:top_level"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merge_heart_rate_bpm/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /resting_heart_rate<-merge_heart_rate_bpm/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.android.gms:resting_heart_rate<-merge_heart_rate_bpm"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.fitkit/ && $.Body.dataSourceId =~ /apple/ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /local_data/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.fitkit/ && $.Body.dataSourceId =~ /apple/ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /top_level/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.fitkit:apple:iphone:top_level"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.ios.fit/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /watch/ && $.Body.dataSourceId =~ /top_level/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.ios.fit:appleinc.:watch:top_level"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.height' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merge_height/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "height",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.height:com.google.android.gms:merge_height"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.height' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.fitkit/ && $.Body.dataSourceId =~ /apple/ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /local_data/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "height",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.height:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.oxygen_saturation' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merged/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "oxygen_saturation",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "supplemental_oxygen_flow_rate",
+                      "valueExpression": "matchedToken.value[1].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "oxygen_therapy_administration_mode",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_THERAPY_ADMINISTRATION_MODE_NASAL_CANULA'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "oxygen_saturation_system",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_SATURATION_SYSTEM_PERIPHERAL_CAPILLARY'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "oxygen_saturation_measurement_method",
+                      "valueExpression": {
+                        "value": "matchedToken.value[4].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_SATURATION_MEASUREMENT_METHOD_PULSE_OXIMETRY'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.oxygen_saturation:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.oxygen_saturation' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.fitkit/ && $.Body.dataSourceId =~ /apple/ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /local_data/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "oxygen_saturation",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "supplemental_oxygen_flow_rate",
+                      "valueExpression": "matchedToken.value[1].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "oxygen_therapy_administration_mode",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_THERAPY_ADMINISTRATION_MODE_NASAL_CANULA'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "oxygen_saturation_system",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_SATURATION_SYSTEM_PERIPHERAL_CAPILLARY'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "oxygen_saturation_measurement_method",
+                      "valueExpression": {
+                        "value": "matchedToken.value[4].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_SATURATION_MEASUREMENT_METHOD_PULSE_OXIMETRY'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.oxygen_saturation:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.step_count.delta' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /estimated_steps/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "steps",
+                      "valueExpression": "matchedToken.value[0].intVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.step_count.delta' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merge_step_deltas/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "steps",
+                      "valueExpression": "matchedToken.value[0].intVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.step_count.delta' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.ios.fit/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /top_level/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "steps",
+                      "valueExpression": "matchedToken.value[0].intVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.step_count.delta:com.google.ios.fit:appleinc.:iphone:top_level"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.step_count.delta' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.ios.fit/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /watch/ && $.Body.dataSourceId =~ /top_level/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "steps",
+                      "valueExpression": "matchedToken.value[0].intVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.step_count.delta:com.google.ios.fit:appleinc.:watch:top_level"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.weight' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /merge_weight/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "weight",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.weight:com.google.android.gms:merge_weight"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.weight' && $.Body.dataSourceId =~ /derived/ && $.Body.dataSourceId =~ /com.google.fitkit/ && $.Body.dataSourceId =~ /apple/ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /local_data/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "weight",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "derived:com.google.weight:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.blood_glucose' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "blood_glucose_level",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "temporal_relation_to_meal",
+                      "valueExpression": {
+                        "value": "matchedToken.value[1].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_GENERAL'},{\"v\":@,\"n\":`2`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_FASTING'},{\"v\":@,\"n\":`3`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_BEFORE_MEAL'},{\"v\":@,\"n\":`4`,\"s\":'FIELD_TEMPORAL_RELATION_TO_MEAL_AFTER_MEAL'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "meal_type",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'MEAL_TYPE_UNKNOWN'},{\"v\":@,\"n\":`2`,\"s\":'MEAL_TYPE_BREAKFAST'},{\"v\":@,\"n\":`3`,\"s\":'MEAL_TYPE_LUNCH'},{\"v\":@,\"n\":`4`,\"s\":'MEAL_TYPE_DINNER'},{\"v\":@,\"n\":`5`,\"s\":'MEAL_TYPE_SNACK'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "temporal_relation_to_sleep",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_FULLY_AWAKE'},{\"v\":@,\"n\":`2`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_BEFORE_SLEEP'},{\"v\":@,\"n\":`3`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_ON_WAKING'},{\"v\":@,\"n\":`4`,\"s\":'TEMPORAL_RELATION_TO_SLEEP_DURING_SLEEP'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "blood_glucose_specimen_source",
+                      "valueExpression": {
+                        "value": "matchedToken.value[4].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_INTERSTITIAL_FLUID'},{\"v\":@,\"n\":`2`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_CAPILLARY_BLOOD'},{\"v\":@,\"n\":`3`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_PLASMA'},{\"v\":@,\"n\":`4`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_SERUM'},{\"v\":@,\"n\":`5`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_TEARS'},{\"v\":@,\"n\":`6`,\"s\":'BLOOD_GLUCOSE_SPECIMEN_SOURCE_WHOLE_BLOOD'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.blood_glucose:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.blood_pressure' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "blood_pressure_systolic",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "blood_pressure_diastolic",
+                      "valueExpression": "matchedToken.value[1].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "body_position",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BODY_POSITION_STANDING'},{\"v\":@,\"n\":`2`,\"s\":'BODY_POSITION_SITTING'},{\"v\":@,\"n\":`3`,\"s\":'BODY_POSITION_LYING_DOWN'},{\"v\":@,\"n\":`4`,\"s\":'BODY_POSITION_SEMI_RECUMBENT'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "blood_pressure_measurement_location",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_LEFT_WRIST'},{\"v\":@,\"n\":`2`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_RIGHT_WRIST'},{\"v\":@,\"n\":`3`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_LEFT_UPPER_ARM'},{\"v\":@,\"n\":`4`,\"s\":'BLOOD_PRESSURE_MEASUREMENT_LOCATION_RIGHT_UPPER_ARM'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.blood_pressure:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.body.fat.percentage' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "percentage",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.body.fat.percentage:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.body.temperature' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "body_temperature",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "body_temperature_measurement_location",
+                      "valueExpression": {
+                        "value": "matchedToken.value[1].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_AXILLARY'},{\"v\":@,\"n\":`2`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_FINGER'},{\"v\":@,\"n\":`3`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_FOREHEAD'},{\"v\":@,\"n\":`4`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_ORAL'},{\"v\":@,\"n\":`5`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_RECTAL'},{\"v\":@,\"n\":`6`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_TEMPORAL_ARTERY'},{\"v\":@,\"n\":`7`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_TOE'},{\"v\":@,\"n\":`8`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_TYMPANIC'},{\"v\":@,\"n\":`9`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_WRIST'},{\"v\":@,\"n\":`10`,\"s\":'BODY_TEMPERATURE_MEASUREMENT_LOCATION_VAGINAL'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.body.temperature:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.heart_rate.bpm:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.heart_rate.bpm' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /watch/ && $.Body.dataSourceId =~ /from_device/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "bpm",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.heart_rate.bpm:com.google.android.gms:appleinc.:watch:from_device"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.height' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "height",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.height:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.oxygen_saturation' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "oxygen_saturation",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "supplemental_oxygen_flow_rate",
+                      "valueExpression": "matchedToken.value[1].fpVal",
+                      "required": true
+                    },
+                    {
+                      "valueName": "oxygen_therapy_administration_mode",
+                      "valueExpression": {
+                        "value": "matchedToken.value[2].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_THERAPY_ADMINISTRATION_MODE_NASAL_CANULA'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "oxygen_saturation_system",
+                      "valueExpression": {
+                        "value": "matchedToken.value[3].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_SATURATION_SYSTEM_PERIPHERAL_CAPILLARY'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    },
+                    {
+                      "valueName": "oxygen_saturation_measurement_method",
+                      "valueExpression": {
+                        "value": "matchedToken.value[4].intVal | [{\"v\":@,\"n\":`0`,\"s\":'UNSPECIFIED'},{\"v\":@,\"n\":`1`,\"s\":'OXYGEN_SATURATION_MEASUREMENT_METHOD_PULSE_OXIMETRY'}][?v == n].s | @[0]",
+                        "language": "JmesPath"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.oxygen_saturation:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.step_count.delta' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /iphone/ && $.Body.dataSourceId =~ /derive_step_deltas/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "steps",
+                      "valueExpression": "matchedToken.value[0].intVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.step_count.delta:com.google.android.gms:appleinc.:iphone:derive_step_deltas"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.step_count.delta' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.gms/ && $.Body.dataSourceId =~ /appleinc./ && $.Body.dataSourceId =~ /watch/ && $.Body.dataSourceId =~ /derive_step_deltas/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "steps",
+                      "valueExpression": "matchedToken.value[0].intVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.step_count.delta:com.google.android.gms:appleinc.:watch:derive_step_deltas"
+                }
+              },
+              {
+                "templateType": "CalculatedContent",
+                "template": {
+                  "typeMatchExpression": "$..[?(@dataTypeName == 'com.google.weight' && $.Body.dataSourceId =~ /raw/ && $.Body.dataSourceId =~ /com.google.android.apps.fitness/ && $.Body.dataSourceId =~ /user_input/)]",
+                  "deviceIdExpression": "$.Body.deviceIdentifier",
+                  "patientIdExpression": "$.Body.patientIdentifier",
+                  "timestampExpression": {
+                    "value": "fromUnixTimestampMs(ceil(multiply(matchedToken.endTimeNanos, `0.000001`)))",
+                    "language": "JmesPath"
+                  },
+                  "values": [
+                    {
+                      "valueName": "weight",
+                      "valueExpression": "matchedToken.value[0].fpVal",
+                      "required": true
+                    }
+                  ],
+                  "typeName": "raw:com.google.weight:com.google.android.apps.fitness:user_input"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', format('en-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest')]",
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs/consumergroups', format('en-{0}', parameters('basename')), 'ingest', '$Default')]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces', replace(format('hw-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations",
+      "apiVersion": "2022-06-01",
+      "name": "[format('{0}/{1}/{2}', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "resourceIdentityResolutionType": "Create",
+        "fhirServiceResourceId": "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+        "fhirMapping": {
+          "content": {
+            "templateType": "CollectionFhir",
+            "template": [
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.blood_glucose"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.blood_glucose_level"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_glucose_level",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.temporal_relation_to_meal"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "temporal_relation_to_meal",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.meal_type"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "meal_type",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.temporal_relation_to_sleep"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "temporal_relation_to_sleep",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.blood_glucose_specimen_source"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_glucose_specimen_source",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.blood_glucose:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.blood_pressure"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.blood_pressure_systolic"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_pressure_systolic",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.blood_pressure_diastolic"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_pressure_diastolic",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.body_position"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "body_position",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.blood_pressure_measurement_location"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_pressure_measurement_location",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.blood_pressure:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.body.fat.percentage"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "percentage",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.body.fat.percentage:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.body.fat.percentage"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "percentage",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.body.fat.percentage:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.body.temperature"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.body.temperature.body_temperature"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "body_temperature",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.body.temperature.body_temperature_measurement_location"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "body_temperature_measurement_location",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.body.temperature:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_minutes"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "intensity",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_minutes:com.google.android.gms:merge_heart_minutes"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_minutes"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "intensity",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_minutes:com.google.ios.fit:appleinc.:iphone:top_level"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_minutes"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "intensity",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_minutes:com.google.ios.fit:appleinc.:watch:top_level"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.android.gms:resting_heart_rate<-merge_heart_rate_bpm"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.fitkit:apple:iphone:top_level"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.heart_rate.bpm:com.google.ios.fit:appleinc.:watch:top_level"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.height"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "height",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.height:com.google.android.gms:merge_height"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.height"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "height",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.height:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.oxygen_saturation"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.supplemental_oxygen_flow_rate"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "supplemental_oxygen_flow_rate",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_therapy_administration_mode"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_therapy_administration_mode",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation_system"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation_system",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation_measurement_method"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation_measurement_method",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.oxygen_saturation:com.google.android.gms:merged"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.oxygen_saturation"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.supplemental_oxygen_flow_rate"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "supplemental_oxygen_flow_rate",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_therapy_administration_mode"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_therapy_administration_mode",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation_system"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation_system",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation_measurement_method"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation_measurement_method",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "derived:com.google.oxygen_saturation:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.step_count.delta"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "steps",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.step_count.delta"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "steps",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.step_count.delta"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "steps",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.step_count.delta:com.google.ios.fit:appleinc.:iphone:top_level"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.step_count.delta"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "steps",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.step_count.delta:com.google.ios.fit:appleinc.:watch:top_level"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.weight"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "weight",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.weight:com.google.android.gms:merge_weight"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.weight"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "weight",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "derived:com.google.weight:com.google.fitkit:apple:iphone:local_data"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.blood_glucose"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.blood_glucose_level"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_glucose_level",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.temporal_relation_to_meal"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "temporal_relation_to_meal",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.meal_type"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "meal_type",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.temporal_relation_to_sleep"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "temporal_relation_to_sleep",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_glucose.blood_glucose_specimen_source"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_glucose_specimen_source",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.blood_glucose:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.blood_pressure"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.blood_pressure_systolic"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_pressure_systolic",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.blood_pressure_diastolic"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_pressure_diastolic",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.body_position"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "body_position",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.blood_pressure.blood_pressure_measurement_location"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "blood_pressure_measurement_location",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.blood_pressure:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.body.fat.percentage"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "percentage",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.body.fat.percentage:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.body.temperature"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.body.temperature.body_temperature"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "body_temperature",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.body.temperature.body_temperature_measurement_location"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "body_temperature_measurement_location",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.body.temperature:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.heart_rate.bpm:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.heart_rate.bpm"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "bpm",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.heart_rate.bpm:com.google.android.gms:appleinc.:watch:from_device"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.height"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "height",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.height:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.oxygen_saturation"
+                    }
+                  ],
+                  "components": [
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.supplemental_oxygen_flow_rate"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "supplemental_oxygen_flow_rate",
+                        "valueType": "Quantity"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_therapy_administration_mode"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_therapy_administration_mode",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation_system"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation_system",
+                        "valueType": "String"
+                      }
+                    },
+                    {
+                      "codes": [
+                        {
+                          "code": "com.google.oxygen_saturation.oxygen_saturation_measurement_method"
+                        }
+                      ],
+                      "value": {
+                        "valueName": "oxygen_saturation_measurement_method",
+                        "valueType": "String"
+                      }
+                    }
+                  ],
+                  "typeName": "raw:com.google.oxygen_saturation:com.google.android.apps.fitness:user_input"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.step_count.delta"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "steps",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.step_count.delta:com.google.android.gms:appleinc.:iphone:derive_step_deltas"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.step_count.delta"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "steps",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.step_count.delta:com.google.android.gms:appleinc.:watch:derive_step_deltas"
+                }
+              },
+              {
+                "templateType": "CodeValueFhir",
+                "template": {
+                  "codes": [
+                    {
+                      "code": "com.google.weight"
+                    }
+                  ],
+                  "value": {
+                    "valueName": "weight",
+                    "valueType": "Quantity"
+                  },
+                  "typeName": "raw:com.google.weight:com.google.android.apps.fitness:user_input"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.HealthcareApis/workspaces/{0}/fhirservices/{1}', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+      "name": "[guid(variables('fhir_data_writer'), resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename'))))]",
+      "properties": {
+        "roleDefinitionId": "[variables('fhir_data_writer')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_table_data_contributor'), resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_table_data_contributor')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_blob_data_owner'), resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_blob_data_owner')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_queue_data_message_sender'), resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_queue_data_message_sender')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('authorize-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_table_data_contributor'), resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_table_data_contributor')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_blob_data_owner'), resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_blob_data_owner')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_queue_data_message_sender'), resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_queue_data_message_sender')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-timer-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.EventHub/namespaces/{0}/eventhubs/{1}', format('en-{0}', parameters('basename')), 'ingest')]",
+      "name": "[guid(variables('event_hubs_data_sender'), resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('event_hubs_data_sender')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest')]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_table_data_contributor'), resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_table_data_contributor')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_blob_data_owner'), resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_blob_data_owner')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_queue_data_contributor'), resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_queue_data_contributor')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', replace(format('sa-{0}', parameters('basename')), '-', ''))]",
+      "name": "[guid(variables('storage_queue_data_message_processor'), resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', '')))]",
+      "properties": {
+        "roleDefinitionId": "[variables('storage_queue_data_message_processor')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename'))), '2022-03-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Web/sites', format('import-data-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', replace(format('sa-{0}', parameters('basename')), '-', ''))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.HealthcareApis/workspaces/{0}/fhirservices/{1}', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+      "name": "[guid(variables('fhir_data_writer'), resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename'))), resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename'))))]",
+      "properties": {
+        "roleDefinitionId": "[variables('fhir_data_writer')]",
+        "principalId": "[reference(resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename'))), '2022-06-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.HealthcareApis/workspaces/fhirservices', replace(format('hw-{0}', parameters('basename')), '-', ''), format('fs-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.EventHub/namespaces/{0}/eventhubs/{1}', format('en-{0}', parameters('basename')), 'ingest')]",
+      "name": "[guid(variables('event_hubs_data_receiver'), resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename'))), resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('event_hubs_data_receiver')]",
+        "principalId": "[reference(resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename'))), '2022-06-01', 'full').identity.principalId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', format('en-{0}', parameters('basename')), 'ingest')]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')))]",
+        "[resourceId('Microsoft.HealthcareApis/workspaces/iotconnectors/fhirdestinations', replace(format('hw-{0}', parameters('basename')), '-', ''), format('hi-{0}', parameters('basename')), format('hd-{0}', parameters('basename')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "authorizeAppName": {
+      "type": "string",
+      "value": "[format('authorize-{0}', parameters('basename'))]"
+    },
+    "importTimerAppName": {
+      "type": "string",
+      "value": "[format('import-timer-{0}', parameters('basename'))]"
+    },
+    "importDataAppName": {
+      "type": "string",
+      "value": "[format('import-data-{0}', parameters('basename'))]"
+    }
+  }
+}

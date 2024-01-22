@@ -1,0 +1,23 @@
+parameters:
+  environment: ''
+  cleanAfter: EphemeralDeploy
+
+stages:
+  - stage: Clean
+    displayName: Cleanup
+    dependsOn: ${{ parameters.cleanAfter }}
+    variables:
+      - template: ../variables/${{ parameters.environment }}.yml
+    condition: always()
+    jobs:
+      - job: DestroyResources
+        displayName: Resources
+        steps:
+          - task: AzureCLI@2
+            displayName: Destroy $(basename)
+            inputs:
+              azureSubscription: ${{ variables.azure_service_connection_name }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az group delete -n $(basename) --yes
